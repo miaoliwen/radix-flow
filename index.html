@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radix Flow - 进制转换器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-input: #1a1a24;
+            --text-primary: #e8e8ed;
+            --text-secondary: #8888a0;
+            --accent-cyan: #00f5ff;
+            --accent-purple: #a855f7;
+            --accent-lime: #a3e635;
+            --accent-amber: #fbbf24;
+            --accent-coral: #ff6b6b;
+            --border-color: #2a2a3a;
+            --error-color: #ff4757;
+            --glow-cyan: 0 0 20px rgba(0, 245, 255, 0.4);
+            --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
+            --glow-lime: 0 0 20px rgba(163, 230, 53, 0.4);
+            --glow-amber: 0 0 20px rgba(251, 191, 36, 0.4);
+            --glow-cyan-strong: 0 0 30px rgba(0, 245, 255, 0.6);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* CRT Scanline effect */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.1) 0px,
+                rgba(0, 0, 0, 0.1) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            opacity: 0.3;
+        }
+
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(0, 245, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(168, 85, 247, 0.05) 0%, transparent 50%),
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 50px 50px, 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+            animation: gridMove 20s linear infinite;
+        }
+
+        /* Floating mesh gradient */
+        .mesh-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.4;
+        }
+
+        .mesh-gradient::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(0, 245, 255, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(163, 230, 53, 0.1) 0%, transparent 50%);
+            animation: meshFloat 15s ease-in-out infinite;
+        }
+
+        @keyframes meshFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(2%, 2%) rotate(1deg); }
+            50% { transform: translate(-1%, 3%) rotate(-1deg); }
+            75% { transform: translate(3%, -2%) rotate(2deg); }
+        }
+
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: clamp(1.5rem, 4vw, 2.5rem);
+            backdrop-filter: blur(20px);
+            box-shadow:
+                0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 0 0 1px rgba(255, 255, 255, 0.02);
+            animation: slideUp 0.6s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent);
+            opacity: 0.6;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(1.8rem, 5vw, 2.5rem);
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-lime));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+            text-shadow: 0 0 40px rgba(0, 245, 255, 0.3);
+            animation: titleGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes titleGlow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.2); }
+        }
+
+        .subtitle {
+            font-size: clamp(0.9rem, 2vw, 1.1rem);
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .input-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 1.25rem 3rem 1.25rem 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(1rem, 2.5vw, 1.25rem);
+            background: var(--bg-input);
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            color: var(--text-primary);
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: var(--glow-cyan-strong), inset 0 0 20px rgba(0, 245, 255, 0.05);
+            transform: translateY(-1px);
+        }
+
+        .input-field.error {
+            border-color: var(--error-color);
+            box-shadow: 0 0 20px rgba(255, 71, 87, 0.4), inset 0 0 20px rgba(255, 71, 87, 0.1);
+            animation: shake 0.5s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        .input-field::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.5;
+        }
+
+        .clear-btn {
+            position: absolute;
+            right: 1rem;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.2s ease;
+            border-radius: 50%;
+        }
+
+        .input-field:not(:placeholder-shown) + .clear-btn,
+        .input-field:focus + .clear-btn {
+            opacity: 1;
+        }
+
+        .clear-btn:hover {
+            color: var(--accent-coral);
+            transform: scale(1.15) rotate(90deg);
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .select-wrapper {
+            position: relative;
+        }
+
+        .select-label {
+            display: block;
+            font-size: clamp(0.75rem, 1.5vw, 0.85rem);
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .select-field {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(0.9rem, 2vw, 1rem);
+            background: var(--bg-input);
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            color: var(--text-primary);
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .select-field:focus {
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .select-wrapper::after {
+            content: '';
+            position: absolute;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid var(--accent-purple);
+            pointer-events: none;
+            transition: transform 0.3s ease;
+        }
+
+        .select-wrapper:focus-within::after {
+            transform: rotate(180deg);
+        }
+
+        .error-message {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--error-color);
+            font-size: clamp(0.8rem, 1.5vw, 0.9rem);
+            margin-top: 0.75rem;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+
+        .error-message.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .error-message svg {
+            flex-shrink: 0;
+            animation: errorPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes errorPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .results-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: clamp(0.75rem, 2vw, 1.25rem);
+        }
+
+        .result-card {
+            background: var(--bg-input);
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .result-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, var(--card-color) 0%, transparent 50%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .result-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--card-color);
+            transform: scaleX(0);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .result-card:nth-child(1) { animation-delay: 0.1s; }
+        .result-card:nth-child(2) { animation-delay: 0.2s; }
+        .result-card:nth-child(3) { animation-delay: 0.3s; }
+        .result-card:nth-child(4) { animation-delay: 0.4s; }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .result-card.binary { --card-color: var(--accent-cyan); }
+        .result-card.octal { --card-color: var(--accent-purple); }
+        .result-card.decimal { --card-color: var(--accent-lime); }
+        .result-card.hexadecimal { --card-color: var(--accent-amber); }
+
+        .result-card:hover {
+            border-color: var(--card-color);
+            transform: translateY(-4px) scale(1.02);
+            box-shadow:
+                0 12px 30px -8px rgba(0, 0, 0, 0.4),
+                0 0 30px rgba(0, 0, 0, 0.2),
+                0 0 0 1px var(--card-color);
+        }
+
+        .result-card:hover::before {
+            opacity: 0.08;
+        }
+
+        .result-card:hover::after {
+            transform: scaleX(1);
+        }
+
+        .result-card:active {
+            transform: translateY(-2px) scale(0.98);
+        }
+
+        .result-card .result-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(0.7rem, 1.2vw, 0.8rem);
+            color: var(--card-color);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            position: relative;
+            z-index: 1;
+        }
+
+        .result-card .result-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(1rem, 2.5vw, 1.3rem);
+            color: var(--text-primary);
+            word-break: break-all;
+            transition: all 0.2s ease;
+            position: relative;
+            z-index: 1;
+        }
+
+        .result-card:hover .result-value {
+            color: var(--card-color);
+            text-shadow: 0 0 10px var(--card-color);
+        }
+
+        .result-card.copied {
+            animation: copySuccess 0.5s ease-out;
+        }
+
+        .result-card.copied .result-value::after {
+            content: ' ✓';
+            color: var(--accent-lime);
+            font-size: 0.8em;
+            animation: checkmarkPop 0.3s ease-out;
+        }
+
+        @keyframes copySuccess {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px var(--accent-lime); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes checkmarkPop {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: linear-gradient(135deg, var(--accent-lime), #84cc16);
+            color: #000;
+            padding: 0.875rem 1.75rem;
+            border-radius: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1001;
+            box-shadow: 0 10px 40px rgba(163, 230, 53, 0.4);
+        }
+
+        .toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .hint {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: clamp(0.75rem, 1.5vw, 0.85rem);
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .hint span {
+            color: var(--accent-cyan);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* History Section */
+        .history-section {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .history-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .history-clear {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.375rem 0.75rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .history-clear:hover {
+            border-color: var(--accent-coral);
+            color: var(--accent-coral);
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .history-list {
+            max-height: 150px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .history-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .history-list::-webkit-scrollbar-track {
+            background: var(--bg-input);
+            border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-cyan);
+        }
+
+        .history-item {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .history-item:hover {
+            border-color: var(--accent-cyan);
+            transform: translateX(4px);
+            box-shadow: -4px 0 20px rgba(0, 245, 255, 0.2);
+        }
+
+        .history-item-input {
+            color: var(--text-primary);
+        }
+
+        .history-item-base {
+            color: var(--accent-cyan);
+            font-size: 0.75rem;
+        }
+
+        .history-empty {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            padding: 1rem;
+            opacity: 0.6;
+        }
+
+        /* Keyboard shortcuts hint */
+        .shortcuts-hint {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .shortcut {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .shortcut-key {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 480px) {
+            .results-section {
+                grid-template-columns: 1fr;
+            }
+
+            .card {
+                padding: 1.25rem;
+            }
+
+            .input-field {
+                padding: 1rem 2.5rem 1rem 1rem;
+            }
+
+            .shortcuts-hint {
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="mesh-gradient"></div>
+    <div class="bg-grid"></div>
+    <div class="scanlines"></div>
+
+    <div class="container">
+        <div class="card">
+            <header class="header">
+                <h1 class="title">Radix Flow</h1>
+                <p class="subtitle">进制转换器 · 实时互转</p>
+            </header>
+
+            <section class="input-section">
+                <div class="input-group">
+                    <div class="input-wrapper">
+                        <input
+                            type="text"
+                            class="input-field"
+                            id="numberInput"
+                            placeholder="输入数值"
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <button class="clear-btn" id="clearBtn" title="清空 (Esc)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="select-wrapper">
+                    <label class="select-label" for="baseSelect">输入进制</label>
+                    <select class="select-field" id="baseSelect">
+                        <option value="2">二进制 (2)</option>
+                        <option value="8">八进制 (8)</option>
+                        <option value="10" selected>十进制 (10)</option>
+                        <option value="16">十六进制 (16)</option>
+                    </select>
+                </div>
+
+                <div class="error-message" id="errorMessage">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span id="errorText"></span>
+                </div>
+            </section>
+
+            <section class="results-section" id="resultsSection">
+                <div class="result-card binary" data-base="2">
+                    <div class="result-label">二进制 (2)</div>
+                    <div class="result-value" id="resultBinary">-</div>
+                </div>
+                <div class="result-card octal" data-base="8">
+                    <div class="result-label">八进制 (8)</div>
+                    <div class="result-value" id="resultOctal">-</div>
+                </div>
+                <div class="result-card decimal" data-base="10">
+                    <div class="result-label">十进制 (10)</div>
+                    <div class="result-value" id="resultDecimal">-</div>
+                </div>
+                <div class="result-card hexadecimal" data-base="16">
+                    <div class="result-label">十六进制 (16)</div>
+                    <div class="result-value" id="resultHex">-</div>
+                </div>
+            </section>
+
+            <!-- History Section -->
+            <section class="history-section" id="historySection" style="display: none;">
+                <div class="history-header">
+                    <span class="history-title">转换历史</span>
+                    <button class="history-clear" id="clearHistoryBtn">清空</button>
+                </div>
+                <div class="history-list" id="historyList"></div>
+            </section>
+
+            <p class="hint">点击任意结果即可<span>复制</span>到剪贴板</p>
+
+            <div class="shortcuts-hint">
+                <div class="shortcut">
+                    <span class="shortcut-key">Esc</span>
+                    <span>清空</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-key">Alt</span>
+                    <span>+ 1-4 切换进制</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-key">⌘/Ctrl</span>
+                    <span>+ 1-4 复制</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">已复制到剪贴板!</div>
+
+    <script>
+        const VALID_CHARS = {
+            2: '01',
+            8: '01234567',
+            10: '0123456789',
+            16: '0123456789abcdefABCDEF'
+        };
+
+        const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+        const MAX_HISTORY = 10;
+        let history = [];
+
+        const elements = {
+            input: document.getElementById('numberInput'),
+            clearBtn: document.getElementById('clearBtn'),
+            baseSelect: document.getElementById('baseSelect'),
+            errorMessage: document.getElementById('errorMessage'),
+            errorText: document.getElementById('errorText'),
+            resultsSection: document.getElementById('resultsSection'),
+            toast: document.getElementById('toast'),
+            resultBinary: document.getElementById('resultBinary'),
+            resultOctal: document.getElementById('resultOctal'),
+            resultDecimal: document.getElementById('resultDecimal'),
+            resultHex: document.getElementById('resultHex'),
+            historySection: document.getElementById('historySection'),
+            historyList: document.getElementById('historyList'),
+            clearHistoryBtn: document.getElementById('clearHistoryBtn')
+        };
+
+        function validateInput(value, base) {
+            if (!value || value.trim() === '') {
+                return { valid: true, error: null };
+            }
+
+            const validChars = VALID_CHARS[base];
+            const upperValue = value.toUpperCase();
+
+            for (const char of upperValue) {
+                if (!validChars.includes(char)) {
+                    return {
+                        valid: false,
+                        error: `包含无效字符 "${char}"，${getBaseName(base)} 只能是 ${validChars}`
+                    };
+                }
+            }
+
+            try {
+                const decimalValue = parseInt(value, base);
+                if (decimalValue > MAX_SAFE_INTEGER) {
+                    return {
+                        valid: false,
+                        error: `数值超出安全范围 (最大 ${MAX_SAFE_INTEGER})`
+                    };
+                }
+                if (decimalValue < 0) {
+                    return {
+                        valid: false,
+                        error: '不支持负数'
+                    };
+                }
+            } catch (e) {
+                return {
+                    valid: false,
+                    error: '无效的数值格式'
+                };
+            }
+
+            return { valid: true, error: null };
+        }
+
+        function getBaseName(base) {
+            const names = {
+                2: '二进制',
+                8: '八进制',
+                10: '十进制',
+                16: '十六进制'
+            };
+            return names[base] || `Base ${base}`;
+        }
+
+        function convertNumber(value, fromBase) {
+            if (!value || value.trim() === '') {
+                return { binary: '-', octal: '-', decimal: '-', hexadecimal: '-' };
+            }
+
+            try {
+                const decimal = parseInt(value, fromBase);
+
+                if (isNaN(decimal)) {
+                    return { binary: '-', octal: '-', decimal: '-', hexadecimal: '-' };
+                }
+
+                return {
+                    binary: decimal.toString(2),
+                    octal: decimal.toString(8),
+                    decimal: decimal.toString(10),
+                    hexadecimal: decimal.toString(16).toUpperCase()
+                };
+            } catch (e) {
+                return { binary: '-', octal: '-', decimal: '-', hexadecimal: '-' };
+            }
+        }
+
+        function addToHistory(value, base, results) {
+            if (!value || value.trim() === '') return;
+
+            const entry = {
+                value,
+                base,
+                results,
+                timestamp: Date.now()
+            };
+
+            // Remove duplicate
+            history = history.filter(h => !(h.value === value && h.base === base));
+            history.unshift(entry);
+            history = history.slice(0, MAX_HISTORY);
+
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (history.length === 0) {
+                elements.historySection.style.display = 'none';
+                return;
+            }
+
+            elements.historySection.style.display = 'block';
+            elements.historyList.innerHTML = history.map((item, index) => `
+                <div class="history-item" data-index="${index}">
+                    <span class="history-item-input">${item.value}</span>
+                    <span class="history-item-base">Base ${item.base}</span>
+                </div>
+            `).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.history-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const index = parseInt(item.dataset.index);
+                    const entry = history[index];
+                    elements.input.value = entry.value;
+                    elements.baseSelect.value = entry.base;
+                    updateResults(entry.value, entry.base);
+                    elements.input.focus();
+                });
+            });
+        }
+
+        function clearHistory() {
+            history = [];
+            renderHistory();
+        }
+
+        function updateResults(value, base, skipHistory = false) {
+            const validation = validateInput(value, base);
+
+            if (!validation.valid) {
+                elements.input.classList.add('error');
+                elements.errorText.textContent = validation.error;
+                elements.errorMessage.classList.add('visible');
+                return;
+            }
+
+            elements.input.classList.remove('error');
+            elements.errorMessage.classList.remove('visible');
+
+            if (!value || value.trim() === '') {
+                elements.resultBinary.textContent = '-';
+                elements.resultOctal.textContent = '-';
+                elements.resultDecimal.textContent = '-';
+                elements.resultHex.textContent = '-';
+                return;
+            }
+
+            const results = convertNumber(value, base);
+
+            elements.resultBinary.textContent = results.binary;
+            elements.resultOctal.textContent = results.octal;
+            elements.resultDecimal.textContent = results.decimal;
+            elements.resultHex.textContent = results.hexadecimal;
+
+            if (!skipHistory) {
+                addToHistory(value, base, results);
+            }
+        }
+
+        function showToast(message) {
+            elements.toast.textContent = message;
+            elements.toast.classList.add('visible');
+
+            setTimeout(() => {
+                elements.toast.classList.remove('visible');
+            }, 2000);
+        }
+
+        async function copyToClipboard(text) {
+            if (text === '-') return;
+
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('已复制到剪贴板!');
+            } catch (err) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('已复制到剪贴板!');
+            }
+        }
+
+        function handleInput() {
+            const value = elements.input.value.trim();
+            const base = parseInt(elements.baseSelect.value, 10);
+            updateResults(value, base);
+        }
+
+        function handleBaseChange() {
+            const value = elements.input.value.trim();
+            const base = parseInt(elements.baseSelect.value, 10);
+
+            if (value) {
+                const validation = validateInput(value, base);
+                if (!validation.valid) {
+                    elements.input.classList.add('error');
+                    elements.errorText.textContent = validation.error;
+                    elements.errorMessage.classList.add('visible');
+                }
+            }
+
+            updateResults(value, base);
+        }
+
+        function clearInput() {
+            elements.input.value = '';
+            elements.input.classList.remove('error');
+            elements.errorMessage.classList.remove('visible');
+            elements.resultBinary.textContent = '-';
+            elements.resultOctal.textContent = '-';
+            elements.resultDecimal.textContent = '-';
+            elements.resultHex.textContent = '-';
+            elements.input.focus();
+        }
+
+        function handleResultClick(event) {
+            const card = event.currentTarget;
+            const valueElement = card.querySelector('.result-value');
+            const value = valueElement.textContent;
+
+            if (value !== '-') {
+                const base = card.dataset.base;
+                let copyValue = value;
+
+                copyToClipboard(copyValue);
+
+                card.classList.add('copied');
+                setTimeout(() => {
+                    card.classList.remove('copied');
+                }, 1000);
+            }
+        }
+
+        // Keyboard shortcuts
+        function handleKeydown(e) {
+            // Escape to clear
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                clearInput();
+                return;
+            }
+
+            // Check if input field is focused
+            const isInputFocused = document.activeElement === elements.input;
+
+            // Number keys 1-4 to switch base (only when input not focused or using Alt)
+            if (e.key >= '1' && e.key <= '4') {
+                const bases = [2, 8, 10, 16];
+                const baseIndex = parseInt(e.key) - 1;
+
+                if (e.ctrlKey || e.metaKey) {
+                    // Cmd/Ctrl + 1-4 to copy result (always works)
+                    e.preventDefault();
+                    const resultElements = [
+                        elements.resultBinary,
+                        elements.resultOctal,
+                        elements.resultDecimal,
+                        elements.resultHex
+                    ];
+                    const value = resultElements[baseIndex].textContent;
+                    if (value !== '-') {
+                        copyToClipboard(value);
+                        // Highlight the card
+                        const cards = document.querySelectorAll('.result-card');
+                        cards[baseIndex].classList.add('copied');
+                        setTimeout(() => {
+                            cards[baseIndex].classList.remove('copied');
+                        }, 1000);
+                    }
+                } else if (!isInputFocused || e.altKey) {
+                    // 1-4 (without input focus) or Alt + 1-4 (anywhere) to switch base
+                    e.preventDefault();
+                    elements.baseSelect.value = bases[baseIndex];
+                    handleBaseChange();
+                }
+                // If input is focused and no modifier key, let default behavior happen (allow typing)
+            }
+        }
+
+        elements.input.addEventListener('input', handleInput);
+        elements.baseSelect.addEventListener('change', handleBaseChange);
+        elements.clearBtn.addEventListener('click', clearInput);
+        elements.clearHistoryBtn.addEventListener('click', clearHistory);
+        document.addEventListener('keydown', handleKeydown);
+
+        const resultCards = document.querySelectorAll('.result-card');
+        resultCards.forEach(card => {
+            card.addEventListener('click', handleResultClick);
+        });
+
+        elements.input.focus();
+    </script>
+</body>
+</html>
